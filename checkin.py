@@ -109,7 +109,11 @@ class AIvaluxCheckin:
             self.log("开始签到...")
             response = self.session.post(
                 checkin_url,
-                headers={'Authorization': f'Bearer {self.access_token}'}
+                json={},  # 发送空的JSON对象
+                headers={
+                    'Authorization': f'Bearer {self.access_token}',
+                    'Content-Type': 'application/json'
+                }
             )
 
             if response.status_code == 200:
@@ -117,15 +121,23 @@ class AIvaluxCheckin:
                 self.log(f"签到响应: {json.dumps(data, ensure_ascii=False)}")
 
                 # 根据响应判断是否成功
-                if data.get('code') == 0 or data.get('success'):
+                if data.get('ok'):
                     self.log("✅ 签到成功！", "SUCCESS")
                     return True
-                elif '已签到' in str(data) or 'already' in str(data).lower():
-                    self.log("ℹ️ 今日已签到", "INFO")
-                    return True
                 else:
-                    self.log(f"签到失败: {data}", "ERROR")
+                    self.log(f"签到返回: {data}", "INFO")
                     return False
+            elif response.status_code == 400:
+                # 可能已经签到过了
+                try:
+                    data = response.json()
+                    if 'already' in str(data).lower() or '已签到' in str(data):
+                        self.log("ℹ️ 今日已签到", "INFO")
+                        return True
+                except:
+                    pass
+                self.log(f"签到失败: {response.text}", "ERROR")
+                return False
             else:
                 self.log(f"签到请求失败: HTTP {response.status_code} - {response.text}", "ERROR")
                 return False
@@ -148,7 +160,13 @@ class AIvaluxCheckin:
         time.sleep(1)
 
         # 步骤2: 检查状态
-        self.check_status()
+        status = self.check_status()
+
+        # 检查今天是否已经签到
+        if status and status.get('ok') and status.get('data', {}).get('today', {}).get('checked_in'):
+            self.log("✅ 今日已签到，无需重复签到", "SUCCESS")
+            self.log("=" * 50)
+            return True
 
         time.sleep(1)
 
